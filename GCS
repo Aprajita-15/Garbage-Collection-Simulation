@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garbage Collection Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0d1b2a;
+            font-family: 'Courier New', monospace;
+            color: #e0e1dd;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            
+        }
+        h1 {
+            color: #00ffcc;
+            text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc;
+            margin: 0;
+            font-size: 24px;
+            text-align: center;
+        }
+        #canvas {
+            display: block;
+            background: radial-gradient(circle, rgba(29, 53, 87, 0.8) 0%, rgba(13, 27, 42, 1) 100%);
+            width: 600px;
+            height: 400px;
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.5);
+        }
+        .control-panel {
+            background: rgba(27, 38, 59, 0.9);
+            padding: 15px;
+            border: 2px solid #00ffcc;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.5);
+            width: fit-content;
+        }
+        button {
+            background: #1b263b;
+            color: #00ffcc;
+            border: 2px solid #00ffcc;
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #00ffcc;
+            color: #0d1b2a;
+            box-shadow: 0 0 10px #00ffcc;
+        }
+        .node {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: #415a77;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #e0e1dd;
+            font-size: 14px;
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
+            transition: all 0.5s;
+        }
+        .marked {
+            background: #ff0066;
+            box-shadow: 0 0 20px #ff0066;
+        }
+        .swept {
+            animation: fadeOut 1s forwards;
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; transform: scale(0); }
+        }
+        .reference {
+            stroke: #00ffcc;
+            stroke-width: 2;
+            stroke-dasharray: 5;
+            animation: dash 2s linear infinite;
+        }
+        @keyframes dash {
+            to { stroke-dashoffset: 20; }
+        }
+        .info {
+            background: rgba(27, 38, 59, 0.9);
+            padding: 15px;
+            border: 2px solid #00ffcc;
+            border-radius: 10px;
+            font-size: 14px;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.5);
+            width: fit-content;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Garbage Collection Simulator</h1>
+        <div class="control-panel">
+            <button onclick="addObject()">Add Object</button>
+            <button onclick="addReference()">Add Reference</button>
+            <button onclick="runGarbageCollection()">Run GC</button>
+            <button onclick="reset()">Reset</button>
+        </div>
+        <canvas id="canvas"></canvas>
+        <div class="info" id="info">Objects: 0 | References: 0 | Phase: Idle</div>
+    </div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let objects = [];
+        let references = [];
+        let phase = 'Idle';
+
+        function resizeCanvas() {
+            canvas.width = 600;
+            canvas.height = 400;
+        }
+        resizeCanvas();
+
+        class MemoryObject {
+            constructor(id) {
+                this.id = id;
+                this.x = Math.random() * (canvas.width - 100) + 50;
+                this.y = Math.random() * (canvas.height - 100) + 50;
+                this.element = document.createElement('div');
+                this.element.className = 'node';
+                this.element.innerText = `Obj${id}`;
+                this.element.style.left = `${this.x - 20 + canvas.offsetLeft}px`;
+                this.element.style.top = `${this.y - 20 + canvas.offsetTop}px`;
+                document.body.appendChild(this.element);
+                this.marked = false;
+            }
+            mark() {
+                this.marked = true;
+                this.element.classList.add('marked');
+            }
+            unmark() {
+                this.marked = false;
+                this.element.classList.remove('marked');
+            }
+            sweep() {
+                this.element.classList.add('swept');
+                setTimeout(() => this.element.remove(), 1000);
+            }
+        }
+
+        class Reference {
+            constructor(from, to) {
+                this.from = from;
+                this.to = to;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.moveTo(objects[this.from].x, objects[this.from].y);
+                ctx.lineTo(objects[this.to].x, objects[this.to].y);
+                ctx.strokeStyle = '#00ffcc';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+            }
+        }
+
+        function addObject() {
+            const obj = new MemoryObject(objects.length);
+            objects.push(obj);
+            updateInfo();
+        }
+
+        function addReference() {
+            if (objects.length < 2) return;
+            const from = Math.floor(Math.random() * objects.length);
+            let to = Math.floor(Math.random() * objects.length);
+            while (to === from) to = Math.floor(Math.random() * objects.length);
+            references.push(new Reference(from, to));
+            updateInfo();
+        }
+
+        async function runGarbageCollection() {
+            phase = 'Marking';
+            updateInfo();
+            const root = 0;
+            if (objects[root]) {
+                markObject(root, new Set());
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            phase = 'Sweeping';
+            updateInfo();
+            const toRemove = objects.filter(obj => !obj.marked);
+            toRemove.forEach(obj => obj.sweep());
+            objects = objects.filter(obj => obj.marked);
+            references = references.filter(ref => 
+                objects.some(o => o.id === ref.from) && 
+                objects.some(o => o.id === ref.to)
+            );
+            objects.forEach(obj => obj.unmark());
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            phase = 'Idle';
+            updateInfo();
+        }
+
+        function markObject(id, visited) {
+            if (visited.has(id)) return;
+            visited.add(id);
+            objects[id].mark();
+            references
+                .filter(ref => ref.from === id)
+                .forEach(ref => markObject(ref.to, visited));
+        }
+
+        function reset() {
+            objects.forEach(obj => obj.element.remove());
+            objects = [];
+            references = [];
+            phase = 'Idle';
+            updateInfo();
+        }
+
+        function updateInfo() {
+            document.getElementById('info').innerText = 
+                `Objects: ${objects.length} | References: ${references.length} | Phase: ${phase}`;
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            references.forEach(ref => ref.draw());
+            requestAnimationFrame(animate);
+        }
+        animate();
+    </script>
+</body>
+</html>
